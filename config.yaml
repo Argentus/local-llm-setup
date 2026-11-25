@@ -1,0 +1,68 @@
+healthCheckTimeout: 600        # big models take a while to load from disk
+logToStdout: both
+
+macros:
+  # Vulkan llama-server, everything on the iGPU
+  server: >
+    /app/llama-server --host 127.0.0.1 --port ${PORT} --timeout 300
+    -ngl 99 -fa on --jinja -ctk q8_0 -ctv q8_0 -lv 4
+
+models:
+
+  # ---- iGPU (llama-server)
+  qwen3.8-27b:
+    cmd: ${server} -m /models/RVN-Q5_K_M-mtp.gguf -c 64000 --spec-type draft-mtp --spec-draft-n-max 2
+    ttl: 900
+
+  qwen3.8-9b:
+    cmd: ${server} -m /models/Qwen3.8-9B-Distill-uncensored-heretic.Q8_0.gguf -c 64000
+
+  qwen3.8-flash-next-iq1:
+    cmd: ${server} -m /models/Qwen3.8-Flash-Next-GSQ-RCO-Coder-Uncen-IQ1_M-00001-of-00002.gguf -c 64000
+    ttl: 900
+
+  ornith1.5-35b-a3b-heretic:
+    cmd: ${server} -m /models/Ornith-1.5-35B-A3B-Heretic-MTP-APEX-I-Balanced.gguf -c 200000 --spec-type draft-mtp --spec-draft-n-max 3 --chat-template-file /models/ornith.jinja
+    ttl: 900
+
+  inkling-2-mini-q6:
+    cmd: ${server} -m /models/Inkling-2-Mini-AD-Q6_K.gguf -c 200000
+    ttl: 900
+
+  # ---- NPU (FastFlowLM container at flm:8081) ----
+  qwen3.5-9b-npu:
+    cmd: sleep infinity
+    proxy: http://flm:8081
+    checkEndpoint: /v1/models
+    useModelName: qwen3.5:9b
+
+  qwen3.8-27b-npu:
+    cmd: sleep infinity
+    proxy: http://flm:8081
+    checkEndpoint: /v1/models
+    useModelName: qwen3.8-mtp:27b
+
+  deepseek-r1-8b-npu:
+    cmd: sleep infinity
+    proxy: http://flm:8081
+    checkEndpoint: /v1/models
+    useModelName: deepseek-r1:8b
+
+groups:
+  # Big iGPU models: only one at a time
+  igpu:
+    swap: true
+    exclusive: false
+    members: [qwen3.8-27b, qwen3.8-flash-next-iq1, ornith1.5-35b-a3b-heretic, inkling-2-mini-q6]
+
+  npu:
+    swap: true
+    exclusive: false
+    members: [qwen3.5-9b-npu, qwen3.8-27b-npu, deepseek-r1-8b-npu] 
+
+  # Always-on, never evicted, coexist with whatever igpu is running
+  always:
+    persistent: true
+    swap: false
+    exclusive: false
+    members: [qwen3.8-9b]

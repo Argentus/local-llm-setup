@@ -1,0 +1,2 @@
+# Dockerfile copies nothing; keep models etc. out of the build context
+*

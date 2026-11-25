@@ -1,0 +1,49 @@
+# LLM server: llama-swap (front door) -> llama-server on iGPU (Vulkan)
+#                                     -> FastFlowLM on NPU
+
+services:
+  llama-swap:
+    image: ghcr.io/mostlygeek/llama-swap:vulkan   # bundles llama-server (Vulkan build)
+    container_name: llama-swap
+    restart: unless-stopped
+    networks:
+      - llm
+    ports:
+      - "${API_PORT}:8080"
+    devices:
+      - /dev/dri:/dev/dri                          # Radeon iGPU
+    group_add:
+      - "${VIDEO_GID}"
+      - "${RENDER_GID}"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ${MODELS_DIR}:/models:ro
+      - shader-cache:/cache                        # keep Mesa shader cache across restarts
+    environment:
+      - MESA_SHADER_CACHE_DIR=/cache
+      - XDG_CACHE_HOME=/cache
+    command: ["--config", "/app/config.yaml", "--listen", ":8080", "--watch-config"]
+    depends_on:
+      - flm
+
+  flm:
+    build:
+      context: .
+      dockerfile: Dockerfile.flm
+    container_name: flm
+    restart: unless-stopped
+    networks:
+      - llm
+    devices:
+      - /dev/accel/accel0:/dev/accel/accel0        # XDNA2 NPU
+    ulimits:
+      memlock: -1                                  # NPU needs unlimited memlock
+    volumes:
+      - ./flm-home:/root                           # FLM config + downloaded models persist here
+    command: ["flm", "serve", "${FLM_MODEL}", "--host", "0.0.0.0", "--port", "8081"]
+
+networks:
+  llm: {}
+
+volumes:
+  shader-cache:

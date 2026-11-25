@@ -1,0 +1,25 @@
+
+# FastFlowLM on Arch (XRT + amdxdna plugin come from the Arch repos).
+# The amdxdna kernel driver and NPU firmware live on the HOST, not here.
+FROM archlinux:latest
+
+ARG FLM_VERSION=1.0.8
+
+RUN pacman -Syu --noconfirm xrt xrt-plugin-amdxdna curl tar python \
+ && pacman -Scc --noconfirm
+
+# Portable Linux build from https://github.com/ROCm/FastFlowLM/releases
+# The bundled `flm` is a wrapper that runs flm-real from its own directory,
+# so /usr/local/bin/flm execs it by its real path instead of symlinking it.
+RUN mkdir -p /opt/flm \
+ && curl -fsSL -o /tmp/flm.tar.gz \
+      "https://github.com/ROCm/FastFlowLM/releases/download/v${FLM_VERSION}/fastflowlm_${FLM_VERSION}_linux.tar.gz" \
+ && tar -xzf /tmp/flm.tar.gz -C /opt/flm \
+ && rm /tmp/flm.tar.gz \
+ && FLM_BIN="$(find /opt/flm -type f -name flm -perm -u+x | head -n1)" \
+ && test -n "$FLM_BIN" \
+ && test -x "$(dirname "$FLM_BIN")/flm-real" \
+ && printf '#!/bin/sh\nexec "%s" "$@"\n' "$FLM_BIN" > /usr/local/bin/flm \
+ && chmod +x /usr/local/bin/flm
+
+WORKDIR /root
